@@ -9,14 +9,9 @@ ZIP_FILES = mdns-repeater	\
 
 HGVERSION=$(shell hg parents --template "{latesttag}.{latesttagdistance}")
 
-CFLAGS=-Wall
+CFLAGS		=	-Wall -Wextra -Werror -g
 
-ifdef DEBUG
-CFLAGS+= -g
-else
-CFLAGS+= -Os
-LDFLAGS+= -s
-endif
+LDFLAGS		=	-lsocket -lnsl
 
 CFLAGS+= -DHGVERSION="\"${HGVERSION}\""
 

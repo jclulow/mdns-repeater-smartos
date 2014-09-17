@@ -18,6 +18,7 @@
  */
 
 #include <sys/socket.h>
+#include <sys/sockio.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -32,6 +33,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <net/if.h>
+#include <errno.h>
+
+#define	__UNUSED	__attribute__((unused))
 
 #define PACKAGE "mdns-repeater"
 #define MDNS_ADDR "224.0.0.251"
@@ -79,7 +83,7 @@ void log_message(int loglevel, char *fmt_str, ...) {
 static int create_recv_sock() {
 	int sd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sd < 0) {
-		log_message(LOG_ERR, "recv socket(): %m");
+		log_message(LOG_ERR, "recv socket(): %s", strerror(errno));
 		return sd;
 	}
 
@@ -87,7 +91,7 @@ static int create_recv_sock() {
 
 	int on = 1;
 	if ((r = setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0) {
-		log_message(LOG_ERR, "recv setsockopt(SO_REUSEADDR): %m");
+		log_message(LOG_ERR, "recv setsockopt(SO_REUSEADDR): %s", strerror(errno));
 		return r;
 	}
 
@@ -98,18 +102,21 @@ static int create_recv_sock() {
 	serveraddr.sin_port = htons(MDNS_PORT);
 	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);	/* receive multicast */
 	if ((r = bind(sd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) < 0) {
-		log_message(LOG_ERR, "recv bind(): %m");
+		log_message(LOG_ERR, "recv bind(): %s", strerror(errno));
 	}
 
 	// enable loopback in case someone else needs the data
-	if ((r = setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &on, sizeof(on))) < 0) {
-		log_message(LOG_ERR, "recv setsockopt(IP_MULTICAST_LOOP): %m");
+#if 0
+	unsigned char ucon = 1;
+	if ((r = setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &ucon, sizeof(ucon))) < 0) {
+		log_message(LOG_ERR, "recv setsockopt(IP_MULTICAST_LOOP): %s", strerror(errno));
 		return r;
 	}
+#endif
 
 #ifdef IP_PKTINFO
-	if ((r = setsockopt(sd, SOL_IP, IP_PKTINFO, &on, sizeof(on))) < 0) {
-		log_message(LOG_ERR, "recv setsockopt(IP_PKTINFO): %m");
+	if ((r = setsockopt(sd, IPPROTO_IP, IP_PKTINFO, &on, sizeof(on))) < 0) {
+		log_message(LOG_ERR, "recv setsockopt(IP_PKTINFO): %s", strerror(errno));
 		return r;
 	}
 #endif
@@ -120,7 +127,7 @@ static int create_recv_sock() {
 static int create_send_sock(int recv_sockfd, const char *ifname, struct if_sock *sockdata) {
 	int sd = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sd < 0) {
-		log_message(LOG_ERR, "send socket(): %m");
+		log_message(LOG_ERR, "send socket(): %s", strerror(errno));
 		return sd;
 	}
 
@@ -136,7 +143,7 @@ static int create_send_sock(int recv_sockfd, const char *ifname, struct if_sock 
 
 #ifdef SO_BINDTODEVICE
 	if ((r = setsockopt(sd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(struct ifreq))) < 0) {
-		log_message(LOG_ERR, "send setsockopt(SO_BINDTODEVICE): %m");
+		log_message(LOG_ERR, "send setsockopt(SO_BINDTODEVICE): %s", strerror(errno));
 		return r;
 	}
 #endif
@@ -156,7 +163,7 @@ static int create_send_sock(int recv_sockfd, const char *ifname, struct if_sock 
 
 	int on = 1;
 	if ((r = setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0) {
-		log_message(LOG_ERR, "send setsockopt(SO_REUSEADDR): %m");
+		log_message(LOG_ERR, "send setsockopt(SO_REUSEADDR): %s", strerror(errno));
 		return r;
 	}
 
@@ -167,7 +174,7 @@ static int create_send_sock(int recv_sockfd, const char *ifname, struct if_sock 
 	serveraddr.sin_port = htons(MDNS_PORT);
 	serveraddr.sin_addr.s_addr = if_addr->s_addr;
 	if ((r = bind(sd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) < 0) {
-		log_message(LOG_ERR, "send bind(): %m");
+		log_message(LOG_ERR, "send bind(): %s", strerror(errno));
 	}
 
 	// add membership to receiving socket
@@ -176,15 +183,17 @@ static int create_send_sock(int recv_sockfd, const char *ifname, struct if_sock 
 	mreq.imr_interface.s_addr = if_addr->s_addr;
 	mreq.imr_multiaddr.s_addr = inet_addr(MDNS_ADDR);
 	if ((r = setsockopt(recv_sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq))) < 0) {
-		log_message(LOG_ERR, "recv setsockopt(IP_ADD_MEMBERSHIP): %m");
+		log_message(LOG_ERR, "recv setsockopt(IP_ADD_MEMBERSHIP): %s", strerror(errno));
 		return r;
 	}
 
+#if 0
 	// enable loopback in case someone else needs the data
 	if ((r = setsockopt(sd, IPPROTO_IP, IP_MULTICAST_LOOP, &on, sizeof(on))) < 0) {
-		log_message(LOG_ERR, "send setsockopt(IP_MULTICAST_LOOP): %m");
+		log_message(LOG_ERR, "send setsockopt(IP_MULTICAST_LOOP): %s", strerror(errno));
 		return r;
 	}
+#endif
 
 	char *addr_str = strdup(inet_ntoa(sockdata->addr));
 	char *mask_str = strdup(inet_ntoa(sockdata->mask));
@@ -209,7 +218,7 @@ static ssize_t send_packet(int fd, const void *data, size_t len) {
 	return sendto(fd, data, len, 0, (struct sockaddr *) &toaddr, sizeof(struct sockaddr_in));
 }
 
-static void mdns_repeater_shutdown(int sig) {
+static void mdns_repeater_shutdown(int sig __UNUSED) {
 	shutdown_flag = 1;
 }
 
@@ -220,7 +229,7 @@ static pid_t already_running() {
    
 	f = fopen(pid_file, "r");
 	if (f != NULL) {
-		count = fscanf(f, "%d", &pid);
+		count = fscanf(f, "%d", (int *) &pid);
 		fclose(f);
 		if (count == 1) {
 			if (kill(pid, 0) == 0)
@@ -237,7 +246,7 @@ static int write_pidfile() {
 
 	f = fopen(pid_file, "w");
 	if (f != NULL) {
-		r = fprintf(f, "%d", getpid());
+		r = fprintf(f, "%d", (int) getpid());
 		fclose(f);
 		return (r > 0);
 	}
@@ -249,7 +258,7 @@ static void daemonize() {
 	pid_t running_pid;
 	pid_t pid = fork();
 	if (pid < 0) {
-		log_message(LOG_ERR, "fork(): %m");
+		log_message(LOG_ERR, "fork(): %s", strerror(errno));
 		exit(1);
 	}
 
@@ -385,7 +394,7 @@ int main(int argc, char *argv[]) {
 
 	pkt_data = malloc(PACKET_SIZE);
 	if (pkt_data == NULL) {
-		log_message(LOG_ERR, "cannot malloc() packet buffer: %m");
+		log_message(LOG_ERR, "cannot malloc() packet buffer: %s", strerror(errno));
 		r = 1;
 		goto end_main;
 	}
@@ -409,7 +418,7 @@ int main(int argc, char *argv[]) {
 			ssize_t recvsize = recvfrom(server_sockfd, pkt_data, PACKET_SIZE, 0, 
 				(struct sockaddr *) &fromaddr, &sockaddr_size);
 			if (recvsize < 0) {
-				log_message(LOG_ERR, "recv(): %m");
+				log_message(LOG_ERR, "recv(): %s", strerror(errno));
 			}
 
 			int j;
@@ -426,7 +435,7 @@ int main(int argc, char *argv[]) {
 				continue;
 
 			if (foreground)
-				printf("data from=%s size=%ld\n", inet_ntoa(fromaddr.sin_addr), recvsize);
+				printf("data from=%s size=%d\n", inet_ntoa(fromaddr.sin_addr), recvsize);
 
 			for (j = 0; j < num_socks; j++) {
 				// do not repeat packet back to the same network from which it originated
